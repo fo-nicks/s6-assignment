@@ -1214,6 +1214,8 @@ name = "s6-assignment"
 version = "0.1.0"
 dependencies = [
  "actix-web",
+ "regex",
+ "serde",
 ]
 
 [[package]]
