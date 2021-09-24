@@ -1,6 +1,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 use serde::Deserialize;
+use serde::Serialize;
 use regex::Regex;
 
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
@@ -14,9 +15,9 @@ struct AppState {
 }
 
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 struct ShortenedResponse {
-    url_code: String
+    short_url_code: String
 }
 // TODO: need to normalize the input
 #[derive(Deserialize, Clone)]
@@ -42,8 +43,15 @@ async fn shorten_post(req: web::Json<ShortenedRequest>, data: web::Data<AppState
 }
 
 #[get("/")]
-async fn shorten_get(req_body: String, data: web::Data<AppState>) -> impl Responder {
-    HttpResponse::Ok().body(req_body)
+async fn shorten_get(req: web::Json<ShortenedRequest>, data: web::Data<AppState>) -> impl Responder {
+    let normalized = normalize_url(req.url.clone());
+    let url_map = &data.url_data.lock().unwrap().url_map;
+    if url_map.contains_key(&normalized) {
+        let url = url_map.get(&normalized).unwrap().to_string();
+        return HttpResponse::MovedPermanently().json(ShortenedResponse { short_url_code: url})
+    } else {
+        return  HttpResponse::NotFound().body("Shortened url not found.");
+    }
 }
 
 #[test]
@@ -77,6 +85,7 @@ fn shorten_url_test() {
     assert_eq!(result, "http://localhost:8080/1");
     
 }
+
 fn shorten_url(url: String, data: web::Data<AppState> ) -> String {
     let mut url_data = data.url_data.lock().unwrap();
     let normalized = normalize_url(url);
@@ -85,15 +94,14 @@ fn shorten_url(url: String, data: web::Data<AppState> ) -> String {
     }
     else {
         url_data.current_url_code += 1;
-        return "http://localhost:8080/".to_owned() + &url_data.current_url_code.to_string();
+        let shortened = "http://localhost:8080/".to_owned() + &url_data.current_url_code.to_string();
+        url_data.url_map.insert(normalized.clone(), shortened.clone());
+        return shortened;
     }
 }
 
 #[actix_web::main]
-
 async fn main() -> std::io::Result<()> {
-    // Need to get redirects
-    // need to come up with a basic hashing algorithm
     let state = web::Data::new(AppState {
         url_data: Mutex::new(
             UrlData {
